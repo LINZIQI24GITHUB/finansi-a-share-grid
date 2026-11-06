@@ -1,0 +1,10 @@
+# Local data, generated charts and caches
+data/
+out/
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+*.log
+.DS_Store

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="248" height="64" viewBox="0 0 248 64">
+  <g>
+      <rect width="64" height="64" rx="18.91" fill="#121313"/>
+      <path d="M18.91 43.64V30.55" stroke="#f4ff71" stroke-width="4.36" stroke-linecap="round"/>
+      <path d="M32.0 43.64V16.0" stroke="#f8f6ef" stroke-width="4.36" stroke-linecap="round"/>
+      <path d="M45.09 43.64V24.73" stroke="#f4ff71" stroke-width="4.36" stroke-linecap="round"/>
+  </g>
+  <text x="80" y="42" font-family="Bricolage Grotesque, Segoe UI, sans-serif" font-size="30" font-weight="700" letter-spacing="-1" fill="#121313">Finan<tspan fill="#6f7d2b">SI</tspan></text>
+</svg>
