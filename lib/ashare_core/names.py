@@ -9,6 +9,15 @@ import json
 from pathlib import Path
 
 
+# 指数与 ETF 不在股票清单里（清单只有 5581 只个股），这里给常用标的兜底。
+# 代码 → 简称。只收录大盘指数与宽基 ETF，避免变成一张维护不动的表。
+BUILTIN = {
+    "399300": "沪深300", "000905": "中证500", "399006": "创业板指",
+    "510300": "沪深300ETF", "510500": "中证500ETF", "510050": "上证50ETF",
+    "159915": "创业板ETF", "588000": "科创50ETF", "512100": "中证1000ETF",
+}
+
+
 def _path(data_dir: str | Path) -> Path:
     return Path(data_dir) / "names.json"
 
@@ -37,6 +46,9 @@ def lookup_name(code: str, data_dir: str | Path) -> str:
                 return str(cached)
     except Exception:  # noqa: BLE001
         pass
+    builtin = BUILTIN.get(code)
+    if builtin:
+        return builtin
     try:
         from .providers.eltdx_provider import EltdxProvider
 

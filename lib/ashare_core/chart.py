@@ -196,6 +196,7 @@ def render(path: str | Path, equity: pd.Series, metrics: dict, *,
                 ax.spines[side].set_color(brand.LINE)
             ax.tick_params(colors=brand.MUTED, labelsize=8.5, length=0)
         ax1.tick_params(labelbottom=False)
+        ax1.set_xlim(eq.index[0], eq.index[-1])
         ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
         ax2.xaxis.set_major_formatter(mdates.DateFormatter("%y/%m"))
 
@@ -350,6 +351,7 @@ def render_portfolio(path: str | Path, weights, codes: list[str], equity: pd.Ser
                 ax.spines[side].set_color(brand.LINE)
             ax.tick_params(colors=brand.MUTED, labelsize=8, length=0)
         ax1.tick_params(labelbottom=False)
+        ax1.set_xlim(eq.index[0], eq.index[-1])
         ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
         ax2.xaxis.set_major_formatter(mdates.DateFormatter("%y/%m"))
 
