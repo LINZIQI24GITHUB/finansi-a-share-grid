@@ -210,3 +210,176 @@ def render(path: str | Path, equity: pd.Series, metrics: dict, *,
         plt.close(fig)
 
     return out
+
+
+PORTFOLIO_WARNING = (
+    "后视镜偏差：权重是用整段历史协方差一次性求解的，曲线也来自同一段历史。"
+    "这不是可实盘复现的净值，只用于对比不同约束下的组合形态。"
+)
+
+
+def _stat_row(fig, items: list[tuple[str, str, str]], rect=(0.050, 0.075, 0.900, 0.115)) -> None:
+    """一排统计格：[(标签, 数值, 颜色), ...]，样式与 draw_kpi 一致。"""
+    axk = fig.add_axes(list(rect))
+    axk.set_facecolor(brand.CARD)
+    axk.set_xlim(0, len(items))
+    axk.set_ylim(0, 1)
+    for spine in axk.spines.values():
+        spine.set_color(brand.LINE_SOFT)
+        spine.set_linewidth(0.8)
+    axk.set_xticks([])
+    axk.set_yticks([])
+    for i, (label, value, color) in enumerate(items):
+        axk.text((i + 0.5) / len(items), 0.66, label, ha="center", va="center",
+                 fontsize=8.6, color=brand.MUTED, transform=axk.transAxes)
+        axk.text((i + 0.5) / len(items), 0.32, value, ha="center", va="center",
+                 fontsize=13.5, fontweight="bold", color=color, transform=axk.transAxes)
+
+
+def render_portfolio(path: str | Path, weights, codes: list[str], equity: pd.Series,
+                     benchmark: pd.Series | None, stats: dict, *,
+                     names: list[str] | None = None,
+                     title: str = "组合配置", desc: str = "", period: str = "",
+                     weights_title: str = "目标权重",
+                     series_label: str = "优化组合",
+                     warning: str = PORTFOLIO_WARNING,
+                     disclaimer: str = DISCLAIMER, dpi: int = 150) -> Path | None:
+    """组合专用图：左边权重环形图，右边净值与回撤，提示条压在图与指标之间。
+
+    与通用回测图的区别：通用图只有一条净值；组合图必须同时回答
+    「配了什么」和「配出来长什么样」，所以权重与净值并列，并把偏差写在图上。
+    """
+    try:
+        import matplotlib
+        matplotlib.use("Agg", force=True)
+        import matplotlib.dates as mdates
+        import matplotlib.pyplot as plt
+        import matplotlib.ticker as mticker
+        from matplotlib import font_manager
+        from matplotlib.patches import FancyBboxPatch
+    except Exception:  # noqa: BLE001
+        return None
+
+    eq = pd.Series(list(map(float, equity.values)),
+                   index=pd.Index(pd.to_datetime([str(d)[:10] for d in equity.index])))
+    if len(eq) < 2:
+        return None
+    bench = None
+    if benchmark is not None and len(benchmark):
+        bench = pd.Series(list(map(float, benchmark.values)),
+                          index=pd.Index(pd.to_datetime([str(d)[:10] for d in benchmark.index])))
+        bench = bench.reindex(eq.index).ffill()
+
+    available = {f.name for f in font_manager.fontManager.ttflist}
+    family = next((f for f in _FONTS if f in available), "DejaVu Sans")
+    rc = {"font.family": "sans-serif", "font.sans-serif": [family, "DejaVu Sans"],
+          "axes.unicode_minus": False}
+
+    names = list(names or [""] * len(codes))
+    w = [float(x) for x in weights]
+    keep = [i for i in range(len(codes)) if w[i] > 1e-9]
+    palette = ["#121313", brand.LIME_DEEP, "#0f7b4f", "#b8732a", "#8d8b83", "#c0392b"]
+
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    with plt.rc_context(rc):
+        fig = plt.figure(figsize=(11, 8.6), dpi=dpi)
+        fig.patch.set_facecolor(brand.PAPER)
+
+        series = [(brand.UP, None,
+                   f"{series_label} {_fmt(float(stats.get('total_return') or 0), 'pct_signed')}")]
+        if bench is not None:
+            b_ret = float(bench.iloc[-1] / bench.iloc[0] - 1)
+            series.append((brand.BENCH, (0, (5, 2)), f"等权基准 {_fmt(b_ret, 'pct_signed')}"))
+        draw_header(fig, title=title, desc=desc, period=period, series=series, font_family=family)
+
+        # ── 左：权重环形图 ────────────────────────────────────
+        axp = fig.add_axes([0.045, 0.378, 0.345, 0.360])
+        axp.set_facecolor("none")
+        vals = [w[i] * 100 for i in keep]
+        labels = [(f"{names[i]} {codes[i]}" if names[i] else str(codes[i])) for i in keep]
+        colors = [palette[k % len(palette)] for k in range(len(keep))]
+        dark_text = {brand.LIME_DEEP, "#8d8b83"}
+        wedges, texts, autotexts = axp.pie(
+            vals, colors=colors, startangle=90, counterclock=False,
+            labels=labels, autopct=lambda p: f"{p:.1f}%",
+            labeldistance=1.09, pctdistance=0.79,
+            wedgeprops=dict(width=0.42, edgecolor=brand.PAPER, linewidth=1.4),
+            textprops=dict(fontsize=8.6, color=brand.INK_SOFT),
+        )
+        for at, col in zip(autotexts, colors):
+            at.set_fontsize(8.2)
+            at.set_color(brand.INK if col in dark_text else "#fbfaf6")
+            at.set_fontweight("bold")
+        axp.set_title(weights_title, fontsize=9.5, color=brand.MUTED, loc="left", pad=14)
+        axp.set_aspect("equal")
+
+        zeros = [i for i in range(len(codes)) if w[i] <= 1e-9]
+        if zeros:
+            note = "未入选：" + "、".join(
+                (f"{names[i]} {codes[i]}" if names[i] else str(codes[i])) for i in zeros)
+            fig.text(0.215, 0.330, note + "（权重 0%）", ha="center", va="center",
+                     fontsize=8.2, color=brand.MUTED)
+
+        # ── 右：净值 + 回撤 ───────────────────────────────────
+        ax1 = fig.add_axes([0.455, 0.560, 0.500, 0.185])
+        ax2 = fig.add_axes([0.455, 0.415, 0.500, 0.110], sharex=ax1)
+        ax1.plot(eq.index, eq.values, color=brand.UP, lw=1.9, zorder=3)
+        if bench is not None:
+            ax1.plot(bench.index, bench.values, color=brand.BENCH, lw=1.3,
+                     ls=(0, (5, 2)), zorder=2)
+        ax1.axhline(float(eq.iloc[0]), color=_HAIRLINE, lw=0.9, ls=(0, (4, 3)), zorder=1)
+        ax1.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"{v / 1e4:.0f}万"))
+        ax1.set_title(f"{series_label}净值（等权为基准）", fontsize=9.5, color=brand.MUTED,
+                      loc="left", pad=8)
+
+        dd = eq / eq.cummax() - 1
+        ax2.fill_between(dd.index, dd.values * 100, 0, color=brand.UP, alpha=0.22, lw=0)
+        ax2.plot(dd.index, dd.values * 100, color=brand.UP, lw=0.8, alpha=0.75)
+        ax2.set_ylabel("回撤（%）", fontsize=8.5, color=brand.MUTED)
+        ax2.set_ylim(min(float(dd.min() * 100) * 1.18, -1.0), 1.0)
+        ax2.axhline(0, color=_GRID, lw=0.9)
+        for ax in (ax1, ax2):
+            ax.set_facecolor("none")
+            ax.grid(axis="y", color=_GRID, lw=0.8)
+            ax.set_axisbelow(True)
+            for side in ("top", "right"):
+                ax.spines[side].set_visible(False)
+            for side in ("left", "bottom"):
+                ax.spines[side].set_color(brand.LINE)
+            ax.tick_params(colors=brand.MUTED, labelsize=8, length=0)
+        ax1.tick_params(labelbottom=False)
+        ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+        ax2.xaxis.set_major_formatter(mdates.DateFormatter("%y/%m"))
+
+        # ── 提示条：夹在两张图与绩效指标之间 ──────────────────
+        band = FancyBboxPatch((0.050, 0.245), 0.900, 0.046,
+                              boxstyle="round,pad=0.004,rounding_size=0.008",
+                              linewidth=0.8, edgecolor="#e2b3ad", facecolor="#fbeeea",
+                              transform=fig.transFigure, zorder=1)
+        fig.patches.append(band)
+        fig.text(0.500, 0.268, "⚠ " + warning, fontsize=8.6, color="#8c2f24",
+                 ha="center", va="center")
+
+        # ── 统计格 ────────────────────────────────────────────
+        items = [
+            ("累计收益率", _fmt(float(stats.get("total_return") or 0), "pct_signed"),
+             brand.UP if float(stats.get("total_return") or 0) >= 0 else brand.DOWN),
+            ("年化收益率", _fmt(float(stats.get("ann_return") or 0), "pct_signed"),
+             brand.UP if float(stats.get("ann_return") or 0) >= 0 else brand.DOWN),
+            ("年化波动率", _fmt(float(stats.get("ann_vol") or 0), "pct"), brand.INK),
+            ("夏普比率", _fmt(float(stats.get("sharpe") or 0), "num"), brand.INK),
+            ("最大回撤", _fmt(float(stats.get("max_dd") or 0), "pct"), brand.INK),
+            ("VaR95（日）", _fmt(float(stats.get("var95") or 0), "pct"), brand.INK),
+            ("集中度 HHI", f"{float(stats.get('hhi') or 0):.3f}", brand.INK),
+        ]
+        _stat_row(fig, items)
+
+        fig.text(0.5, 0.030, disclaimer, ha="center", va="center",
+                 fontsize=9, color=brand.MUTED)
+
+        fig.savefig(out, dpi=dpi, facecolor=brand.PAPER)
+        plt.close(fig)
+
+    return out
