@@ -26,7 +26,7 @@ for candidate in (os.getenv("ASHARE_LIB"),
         sys.path.insert(0, str(candidate))
         break
 
-from ashare_core import grid  # noqa: E402
+from ashare_core import grid, names  # noqa: E402
 from ashare_core.providers.eltdx_provider import EltdxProvider  # noqa: E402
 from ashare_core.store import BarsCache  # noqa: E402
 
@@ -47,8 +47,8 @@ DATA = _default_data_dir()
 def resolve_code(raw: str, provider) -> str:
     s = str(raw).strip()
     digits = "".join(ch for ch in s if ch.isdigit())
-    if len(digits) == 6:
-        return digits
+    if digits and len(digits) <= 6:
+        return digits.zfill(6)
     lst = provider.stock_list()
     hit = lst[lst["name"] == s]
     if hit.empty:
@@ -112,7 +112,8 @@ def _grid_metrics(res, stats: dict, n_bars: int) -> dict:
     }
 
 
-def _plot(path: Path, res, df, code: str, stats: dict, step: float, levels: int, amount: float) -> None:
+def _plot(path: Path, res, df, code: str, stats: dict, step: float, levels: int, amount: float,
+          name: str = "") -> None:
     """品牌化权益图：网格权益 vs 买入持有基准。matplotlib 缺失时静默跳过。"""
     try:
         import pandas as pd
@@ -124,7 +125,7 @@ def _plot(path: Path, res, df, code: str, stats: dict, step: float, levels: int,
                       index=res.equity.index)
     out = chart.render(
         path, res.equity, met,
-        title=f"{code} 网格回测",
+        title=f"{name} {code} 网格回测".strip(),
         desc=f"格宽 {step:g}% · {levels} 档 · 每格 {amount:,.0f} 元",
         period=f"{df['date'].iloc[0]} ~ {df['date'].iloc[-1]} · 后复权",
         benchmark=bench,
@@ -178,7 +179,8 @@ def cmd_run(args) -> int:
         out_png = Path(args.plot) if args.plot else (
             SKILL_DIR / "out" / f"grid_{code}_{args.step:g}_{args.levels}.png")
         out_png.parent.mkdir(parents=True, exist_ok=True)
-        _plot(out_png, res, df, code, s, args.step, args.levels, args.amount)
+        stock_name = names.lookup_name(code, DATA)
+        _plot(out_png, res, df, code, s, args.step, args.levels, args.amount, stock_name)
 
     if res.trades:
         print("\n最近 6 笔成交")
